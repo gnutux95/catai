@@ -1,4 +1,8 @@
-# CATAI Linux
+# CATAI Linux 🐱
+
+**Pixel-art desktop cats that walk on your Linux desktop and talk to you using local LLMs (Ollama).**
+
+A lightweight, single-file app that brings animated, interactive, AI-powered cats to your desktop.
 
 Linux port of [wil-pe/CATAI](https://github.com/wil-pe/CATAI) — pixel art desktop cats, powered by Ollama LLM.
 
