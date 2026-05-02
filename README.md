@@ -1,163 +1,163 @@
 # CATAI Linux
 
-Port Linux de [wil-pe/CATAI](https://github.com/wil-pe/CATAI) — chats pixel art sur le bureau, connectes a Ollama.
+Linux port of [wil-pe/CATAI](https://github.com/wil-pe/CATAI) — pixel art desktop cats, powered by Ollama LLM.
 
 ## Quickstart
 
 ```bash
-# 1. Installer les dependances
+# 1. Install dependencies
 bash install.sh
 
-# 2. (Optionnel) Installer Ollama pour le chat IA
+# 2. (Optional) Install Ollama for AI chat
 curl -fsSL https://ollama.ai/install.sh | sh
 ollama serve &
 ollama pull qwen2.5:3b
 
-# 3. (Optionnel) Telecharger les sprites haute qualite
+# 3. (Optional) Download high-quality sprites
 python3 catai.py --download
 
-# 4. Lancer !
+# 4. Run!
 python3 catai.py
 ```
 
-Sans Ollama les chats se baladent mais restent muets. Sans `--download` des sprites generes proceduralement sont utilises.
+Without Ollama, cats roam the desktop but stay silent. Without `--download`, procedurally generated sprites are used.
 
-| Action | Controle |
-|--------|----------|
-| Discuter avec un chat | Clic gauche |
-| Deplacer un chat | Clic droit + glisser |
-| Parametres | Ctrl+S |
-| Quitter | Ctrl+Q |
+| Action | Control |
+|--------|---------|
+| Chat with a cat | Left click |
+| Move a cat | Right click + drag |
+| Settings | Ctrl+S |
+| Quit | Ctrl+Q |
 
-## Installation manuelle (Fedora 43)
+## Manual Installation (Fedora 43)
 
 ```bash
-# Dependances systeme
+# System dependencies
 sudo dnf install python3 python3-pip SDL2 SDL2_image SDL2_mixer SDL2_ttf
 
-# Dependances Python
+# Python dependencies
 pip install pygame pillow requests --user
 
-# Lancer
+# Run
 python3 catai.py
 ```
 
-## Utilisation
+## Usage
 
-| Action | Commande |
-|--------|----------|
-| Ouvrir chat | Clic gauche sur un chat |
-| Deplacer chat | Clic droit + glisser |
-| Parametres | Ctrl+S ou bouton [Settings] en bas a droite |
-| Quitter | Ctrl+Q |
+| Action | Control |
+|--------|---------|
+| Open chat | Left click on a cat |
+| Move cat | Right click + drag |
+| Settings | Ctrl+S or [Settings] button at bottom right |
+| Quit | Ctrl+Q |
 
 ## Options
 
 ```bash
-# Spawn des chats specifiques
+# Spawn specific cats
 python3 catai.py --cats orange black grey
 
-# Choisir le modele Ollama
+# Choose Ollama model
 python3 catai.py --model qwen2.5:3b
 
-# Changer la taille des sprites (1-6)
+# Change sprite scale (1-6)
 python3 catai.py --scale 4
 
-# Plein ecran
+# Fullscreen
 python3 catai.py --fullscreen
 
-# Telecharger les sprites depuis GitHub
+# Download sprites from GitHub
 python3 catai.py --download
 
-# Fond opaque (desactiver la transparence)
+# Opaque background (disable transparency)
 python3 catai.py --opaque
 ```
 
-## Chats et personnalites
+## Cats and Personalities
 
-| Couleur | Nom FR | Nom EN | Nom ES | Personnalite |
-|---------|--------|--------|--------|--------------|
-| orange | Citrouille | Pumpkin | Calabaza | Joueur & farceur |
-| black | Ombre | Shadow | Sombra | Mysterieux & philosophe |
-| white | Neige | Snow | Nieve | Elegant & poetique |
-| grey | Einstein | Einstein | Einstein | Sage & savant |
-| brown | Indiana | Indiana | Indiana | Aventurier conteur |
-| cream | Caramel | Caramel | Caramelo | Calin & reconfortant |
+| Color | Name FR | Name EN | Name ES | Personality |
+|-------|---------|---------|---------|-------------|
+| orange | Citrouille | Pumpkin | Calabaza | Playful & mischievous |
+| black | Ombre | Shadow | Sombra | Mysterious & philosophical |
+| white | Neige | Snow | Nieve | Elegant & poetic |
+| grey | Einstein | Einstein | Einstein | Wise & scholarly |
+| brown | Indiana | Indiana | Indiana | Adventurous storyteller |
+| cream | Caramel | Caramel | Caramelo | Cuddly & comforting |
 
-## Multilingue
+## Multilingual
 
-L'interface supporte 3 langues : Francais, Anglais, Espagnol.
-Changez la langue dans les parametres (Ctrl+S) en cliquant sur [FR], [EN] ou [ES].
+The interface supports 3 languages: French, English, Spanish.
+Switch language in Settings (Ctrl+S) by clicking [FR], [EN], or [ES].
 
-Les noms des chats, les personnalites Ollama et les miaulements s'adaptent a la langue.
+Cat names, Ollama personalities, and meows adapt to the selected language.
 
-## Ollama (requis pour le chat IA)
+## Ollama (required for AI chat)
 
 ```bash
-# Installer Ollama
+# Install Ollama
 curl -fsSL https://ollama.ai/install.sh | sh
 
-# Demarrer le serveur
+# Start the server
 ollama serve &
 
-# Telecharger un modele leger (recommande)
+# Download a lightweight model (recommended)
 ollama pull qwen2.5:3b
-# ou
+# or
 ollama pull llama3.2:3b
 ```
 
-Sans Ollama, les chats se baladent mais restent muets.
+Without Ollama, cats roam the desktop but stay silent.
 
-## Sprites personnalises
+## Custom Sprites
 
-Placez vos PNGs dans `./sprites/<color>/<state>/<direction>/frame_NNN.png`.
+Place your PNGs in `./sprites/<color>/<state>/<direction>/frame_NNN.png`.
 
-Etats supportes : `angry`, `drinking`, `eating`, `running-8-frames`, `waking-getting-up`
-Directions : `east`, `north`, `north-east`, `north-west`, `south`, `south-east`, `south-west`, `west`
-Rotations (idle/sleeping) : `./sprites/<color>/rotations/<direction>.png`
+Supported states: `angry`, `drinking`, `eating`, `running-8-frames`, `waking-getting-up`
+Directions: `east`, `north`, `north-east`, `north-west`, `south`, `south-east`, `south-west`, `west`
+Rotations (idle/sleeping): `./sprites/<color>/rotations/<direction>.png`
 
-Format : PNG 68x68 px avec transparence (RGBA), nommes `frame_000.png` a `frame_NNN.png`.
+Format: PNG 68x68 px with transparency (RGBA), named `frame_000.png` to `frame_NNN.png`.
 
-Les sprites originaux de CATAI macOS (MIT) sont compatibles. Utilisez `--download` pour les telecharger automatiquement.
+The original CATAI macOS sprites (MIT) are compatible. Use `--download` to fetch them automatically.
 
-Les chats non-orange utilisent un systeme de teinte HSB pour coloriser les sprites orange — pas besoin de sprites separes pour chaque couleur.
+Non-orange cats use an HSB tinting system to colorize orange sprites — no separate sprites needed for each color.
 
-## Fichiers de configuration
+## Configuration Files
 
-- `~/.catai_settings.json` — preferences (modele, scale, chats actifs, langue)
-- `~/.catai_memory.json` — historique de conversations (par chat unique)
+- `~/.catai_settings.json` — preferences (model, scale, active cats, language)
+- `~/.catai_memory.json` — conversation history (per unique cat)
 
-## Differences avec CATAI macOS
+## Differences from CATAI macOS
 
-| Fonctionnalite | macOS | Linux |
-|----------------|-------|-------|
-| Sprites PNG reels | 368 sprites | via --download ou ori/ |
-| Teinte HSB pour couleurs |  |  |
-| Integrite Ollama |  |  |
-| Personnalites |  |  |
-| Memoire conversations | 20 msgs | 20 msgs (~/.catai_memory.json) |
-| Overlay dock | AppKit | fenetre sans bord (transparent si X11) |
-| Wayland natif | N/A | via SDL2 (XWayland) |
-| Bulles aleatoires |  |  |
-| Multilingue FR/EN/ES |  |  |
-| Etats d'animation | 6 etats | 7 etats (idle, walking, sleeping, eating, drinking, angry, waking) |
-| 8 directions |  |  |
-| Selection modele Ollama | dropdown | clic pour cycle |
-| Edition nom du chat |  |  |
-| Telechargement sprites | manuel | --download |
+| Feature | macOS | Linux |
+|---------|-------|-------|
+| Real PNG sprites | 368 sprites | via --download or ori/ |
+| HSB tinting for colors | | |
+| Ollama integration | | |
+| Personalities | | |
+| Conversation memory | 20 msgs | 20 msgs (~/.catai_memory.json) |
+| Dock overlay | AppKit | borderless window (transparent on X11) |
+| Native Wayland | N/A | via SDL2 (XWayland) |
+| Random meow bubbles | | |
+| Multilingual FR/EN/ES | | |
+| Animation states | 6 states | 7 states (idle, walking, sleeping, eating, drinking, angry, waking) |
+| 8 directions | | |
+| Ollama model selection | dropdown | click to cycle |
+| Cat name editing | | |
+| Sprite download | manual | --download |
 
 ## Credits
 
-Ce projet est un port Linux de [CATAI](https://github.com/wil-pe/CATAI) par **wil-pe**.
+This project is a Linux port of [CATAI](https://github.com/wil-pe/CATAI) by **wil-pe**.
 
-Code et assets reutilises du projet original (MIT) :
-- **Sprites pixel art** — 368 sprites du chat orange (`cute_orange_cat/`) dessines par wil-pe, utilises via `--download` ou copies depuis `ori/CATAI/`
-- **Logique de teinte HSB** — L'algorithme de colorisation `tintSprite()` du fichier `cat.swift` de wil-pe/CATAI a ete reecrit en Python pour produire les variantes black, white, grey, brown, cream a partir des sprites orange
-- **Personnalites et noms des chats** — Citrouille, Ombre, Neige, Einstein, Indiana, Caramel et leurs prompts Ollama sont adaptes du projet original
-- **Structure d'animation** — Etats (idle, walking, sleeping, eating, drinking, angry, waking) et 8 directions reprends le systeme d'animation de CATAI macOS
+Code and assets reused from the original project (MIT):
+- **Pixel art sprites** — 368 orange cat sprites (`cute_orange_cat/`) drawn by wil-pe, used via `--download` or copied from `ori/CATAI/`
+- **HSB tinting logic** — The `tintSprite()` colorization algorithm from wil-pe/CATAI's `cat.swift` was rewritten in Python to produce black, white, grey, brown, and cream variants from orange sprites
+- **Cat personalities and names** — Citrouille, Ombre, Neige, Einstein, Indiana, Caramel and their Ollama prompts are adapted from the original project
+- **Animation structure** — States (idle, walking, sleeping, eating, drinking, angry, waking) and 8 directions follow CATAI macOS's animation system
 
-## Licence
+## License
 
-Ce projet est distribue sous **GNU General Public License v3** (GPLv3).
+This project is distributed under the **GNU General Public License v3** (GPLv3).
 
-Les elements derives du projet original [wil-pe/CATAI](https://github.com/wil-pe/CATAI) restent sous leur licence **MIT** d'origine. Le fichier `LICENSE` contient le texte integral des deux licences.
+Derivative elements from the original [wil-pe/CATAI](https://github.com/wil-pe/CATAI) project remain under their original **MIT** license. The `LICENSE` file contains the full text of both licenses.

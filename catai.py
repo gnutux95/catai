@@ -114,12 +114,12 @@ L10N_MEOWS = {
 }
 
 
-def l10n(key: str, lang: str = "fr") -> str:
-    return L10N_STRINGS.get(key, {}).get(lang, L10N_STRINGS.get(key, {}).get("fr", key))
+def l10n(key: str, lang: str = "en") -> str:
+    return L10N_STRINGS.get(key, {}).get(lang, L10N_STRINGS.get(key, {}).get("en", key))
 
 
-def random_meow(lang: str = "fr") -> str:
-    meows = L10N_MEOWS.get(lang, L10N_MEOWS["fr"])
+def random_meow(lang: str = "en") -> str:
+    meows = L10N_MEOWS.get(lang, L10N_MEOWS["en"])
     return random.choice(meows)
 
 
@@ -284,8 +284,8 @@ class CatColorDef:
     skills: dict           # per-language skill string
 
     def prompt(self, name: str, lang: str) -> str:
-        t = self.traits.get(lang, self.traits.get("fr", ""))
-        s = self.skills.get(lang, self.skills.get("fr", ""))
+        t = self.traits.get(lang, self.traits.get("en", ""))
+        s = self.skills.get(lang, self.skills.get("en", ""))
         if lang == "en":
             return f"You are a little {t} cat named {name}. {s} Respond briefly with cat sounds (meow, purr, mrrp). Max 2-3 sentences."
         elif lang == "es":
@@ -294,7 +294,7 @@ class CatColorDef:
             return f"Tu es un petit chat {t} nomme {name}. {s} Reponds brievement avec des sons de chat (miaou, purr, mrrp). Max 2-3 phrases."
 
     def get_name(self, lang: str) -> str:
-        return self.names.get(lang, self.names.get("fr", self.id))
+        return self.names.get(lang, self.names.get("en", self.id))
 
 
 CAT_COLORS: Dict[str, CatColorDef] = {
@@ -654,7 +654,7 @@ def load_settings() -> dict:
         "scale": SCALE,
         "cats": ["orange"],
         "names": {},
-        "lang": "fr",
+        "lang": "en",
     }
     if SETTINGS_FILE.exists():
         try:
@@ -947,7 +947,7 @@ class ChatBubble:
     def handle_key(self, event, model: str, memory: dict, settings: dict):
         if not self.visible:
             return
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
         if event.key == pygame.K_ESCAPE:
             self.visible = False
         elif event.key == pygame.K_RETURN and self.input_text.strip():
@@ -966,7 +966,7 @@ class ChatBubble:
 
         cat_key = self.cat.color_key
         color_def = CAT_COLORS[cat_key]
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
         cat_name = settings.get("names", {}).get(cat_key, color_def.get_name(lang))
         system   = color_def.prompt(cat_name, lang)
 
@@ -991,13 +991,13 @@ class ChatBubble:
 
         def on_error(err):
             self.is_loading = False
-            lang = settings.get("lang", "fr")
+            lang = settings.get("lang", "en")
             self.messages.append(("assistant", f"[Ollama error: {err}]"))
             self.streaming = ""
 
         if not ollama_available():
             self.is_loading = False
-            lang = settings.get("lang", "fr")
+            lang = settings.get("lang", "en")
             self.messages.append(("assistant", l10n("no_ollama", lang)))
             return
 
@@ -1007,7 +1007,7 @@ class ChatBubble:
         if not self.visible:
             return
 
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
         rect = self.get_rect()
         P    = self.PADDING
         FS   = self.FONT_SCALE
@@ -1162,7 +1162,7 @@ class Cat:
     def rect(self) -> pygame.Rect:
         return pygame.Rect(int(self.x), int(self.y), self.size, self.size)
 
-    def update(self, dt: float, screen_w: int, screen_h: int, lang: str = "fr"):
+    def update(self, dt: float, screen_w: int, screen_h: int, lang: str = "en"):
         if self.dragging:
             return
 
@@ -1227,7 +1227,7 @@ class Cat:
             return _count_frames(self.color_key, self.state, self.direction)
         return 12  # fallback
 
-    def _pick_next_state(self, lang: str = "fr"):
+    def _pick_next_state(self, lang: str = "en"):
         roll = random.random()
         if roll < 0.35:
             self.state = "walking"
@@ -1412,7 +1412,7 @@ class SettingsPanel:
 
         rx = pos[0] - self.rect.x
         ry = pos[1] - self.rect.y
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
 
         # Language flag row
         flag_y = 34
@@ -1533,7 +1533,7 @@ class SettingsPanel:
         if not self.visible:
             return
 
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
         P  = 10
         FS = 1
 
@@ -1722,7 +1722,7 @@ def _make_cat(color_key: str, screen_w: int, screen_h: int, scale: int) -> Cat:
 
 def draw_hud(surface, cats, settings, ollama_ok, show_settings, transparent):
     """Bottom HUD bar."""
-    lang = settings.get("lang", "fr")
+    lang = settings.get("lang", "en")
     sw = surface.get_width()
     sh = surface.get_height()
     bar_h = 28
@@ -2531,7 +2531,7 @@ def main():
     if args.cats:    settings["cats"]  = args.cats
 
     scale = settings.get("scale", SCALE)
-    lang  = settings.get("lang", "fr")
+    lang  = settings.get("lang", "en")
 
     # Calculate usable screen area (accounting for panel)
     usable_h = sh - panel_height
@@ -2571,7 +2571,7 @@ def main():
     # ── Main loop ──
     while True:
         dt = clock.tick(60) / 1000.0
-        lang = settings.get("lang", "fr")
+        lang = settings.get("lang", "en")
 
         # Periodic Ollama check (main thread, simple and safe)
         ollama_check_t -= dt
