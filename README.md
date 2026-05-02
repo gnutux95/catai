@@ -8,6 +8,8 @@ A lightweight, single-file app that brings animated, interactive, AI-powered cat
 
 ![CATAI demo](assets/demo2.png)
 
+![CATAI demo](assets/demo.gif)
+
 ▶️ Full video: [Watch demo](assets/demo.mp4)
 
 Linux port of [wil-pe/CATAI](https://github.com/wil-pe/CATAI) — pixel art desktop cats, powered by Ollama LLM.
