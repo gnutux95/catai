@@ -146,6 +146,41 @@ Non-orange cats use an HSB tinting system to colorize orange sprites — no sepa
 | Cat name editing | | |
 | Sprite download | manual | --download |
 
+## Known Issues
+
+- **No Wayland transparency** — Wayland compositors don't support X Shape click-through or transparent overlays. The app falls back to an opaque window with scanlines. This is a Wayland protocol limitation, not a bug.
+- **No title-bar walking** — `get_active_window_geometry_x11()` is implemented but its result is never used. The macOS original perches cats on the frontmost window's title bar.
+- **`_frame_count_cache` never invalidated** — if sprites are downloaded at runtime, stale "0 frame" entries persist until restart.
+- **X11 display connection leak** — `_X11Conn.close()` is a no-op to avoid a Python 3.14+ segfault. One FD is leaked per session.
+
+## Strengths
+
+- **Single-file, zero-build deployment** — one Python file, no compilation, no package structure. Download and run.
+- **Dual-mode rendering** — automatic detection of X11 vs Wayland with graceful fallback. Desktop mode gives true transparency on X11; window mode works everywhere.
+- **HSB color tinting matches macOS original** — per-pixel hue shift, saturation multiply, and brightness offset produce exact color matches for non-orange cats without needing separate sprite sets. Vectorized with numpy for fast initial load.
+- **Procedural fallback** — works immediately without any sprite download. The pixel-art generated cats are recognizable and animated.
+- **Multilingual** — French, English, and Spanish UI with language-adaptive cat names, personalities, and meows.
+- **Procedural sound** — no external WAV files needed. Meow, purr, and click sounds are generated from numpy waveforms at runtime.
+- **Click vs. drag distinction** — 5px threshold matches macOS interaction model: left-click opens chat, left-drag moves the cat, right-click shows context menu.
+- **X Shape click-through** — transparent areas of the overlay are genuinely click-through on X11, so cats don't block desktop interaction. Cached to only update when cats move.
+- **8-directional walking** — cats walk toward random destinations using all 8 cardinal directions, matching the macOS original.
+
+## Areas for Improvement
+
+- **Split into modules** — the single file should be refactored into `cat.py`, `sprites.py`, `chat.py`, `settings.py`, `x11.py`, `sound.py`, etc.
+- **Add unit tests** — HSB tinting math, state machine transitions, pixel font rendering, and memory persistence all need tests.
+- **Invalidate frame count cache after sprite download** — clear `_frame_count_cache` when `--download` completes during a running session.
+
+## Architectural Limitations
+
+These issues require significant structural changes and cannot be fixed with small patches:
+
+- **No Wayland transparency** — Wayland's security model prohibits client-side window transparency and input redirection. There is no protocol equivalent to X Shape extension. The only path forward would be a compositor-specific plugin (GNOME Shell extension, KWin effect), which is a separate project entirely.
+- **No title-bar walking** — the macOS original uses `CGWindowListCopyWindowInfo` to detect window frames and perch cats on title bars. On Linux, `get_active_window_geometry_x11()` can retrieve window positions via xdotool/python-xlib, but using those coordinates to position cats on top of other windows requires either: (a) a compositor overlay that can draw between window layers (X11 only, fragile), or (b) a separate transparent window per cat synced to the active window's position (major refactor of the rendering model).
+- **X11 display connection leak** — calling `XCloseDisplay` via ctypes triggers a segfault on Python 3.14+ due to internal thread-state cleanup. The only workaround is the current no-op close. A proper fix requires either migrating all X11 calls to python-xlib (which handles connection lifecycle correctly) or restructuring the ctypes bindings to avoid the crash — both are substantial rewrites of the transparency layer.
+- **Single-file architecture blocks testability** — the 3000-line monolith makes it impractical to import and unit-test individual components (HSB math, state machine, sprite loading) in isolation. Adding proper tests requires splitting into modules first, which changes the project's zero-file-install deployment model.
+- **Per-frame X Shape rendering model** — the current architecture renders the entire screen as a single transparent overlay and applies an alpha mask. This means every pixel of every cat must be composited into a full-screen surface, then packed into a 1-bit X Shape mask. A proper fix would use separate small windows per cat (like the macOS `NSWindow`-per-cat approach), eliminating both the full-screen surface and the per-frame mask update — but this is a fundamental redesign of the window management layer.
+
 ## Credits
 
 This project is a Linux port of [CATAI](https://github.com/wil-pe/CATAI) by **wil-pe**.

@@ -24,6 +24,7 @@ import argparse
 import subprocess
 import zipfile
 import uuid
+import logging
 from pathlib import Path
 from dataclasses import dataclass, field
 from typing import Optional, Dict, List, Tuple
@@ -31,6 +32,8 @@ from PIL import Image
 import io
 import base64
 import ctypes
+
+logger = logging.getLogger("catai")
 
 # ──────────────────────────────────────────────────────────
 # CONSTANTS
@@ -152,8 +155,8 @@ class SoundManager:
             self.sounds["meow"] = self._make_meow_sound()
             self.sounds["purr"] = self._make_purr_sound()
             self.sounds["click"] = self._make_click_sound()
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to generate sound effects: %s", e)
 
     def _make_meow_sound(self) -> Optional[pygame.mixer.Sound]:
         """Generate a simple meow sound."""
@@ -264,8 +267,8 @@ class SoundManager:
         if snd:
             try:
                 snd.play()
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to play sound '%s': %s", name, e)
 
 
 # ──────────────────────────────────────────────────────────
@@ -372,50 +375,103 @@ def hsb_to_rgb(h: float, s: float, b: float) -> tuple:
 
 
 def tint_surface_hsb(surf: pygame.Surface, color_def: CatColorDef) -> pygame.Surface:
-    """Apply HSB tinting to a sprite surface (matches original Swift logic exactly)."""
+    """Apply HSB tinting to a sprite surface (matches original Swift logic exactly).
+
+    Uses numpy vectorized operations for speed when available,
+    falls back to per-pixel Python loop otherwise.
+    """
     if color_def.id == "orange":
         return surf
 
     w, h = surf.get_size()
-    # Convert to PIL for pixel access, then back
-    data = pygame.image.tostring(surf, "RGBA")
-    img = Image.frombytes("RGBA", (w, h), data)
-    pixels = img.load()
-
     hs = color_def.hue_shift
     sm = color_def.sat_mul
     bo = color_def.bri_off
 
-    for y in range(h):
-        for x in range(w):
-            r, g, b, a = pixels[x, y]
-            if a < 3:
-                continue
+    try:
+        import numpy as np
+        data = pygame.image.tostring(surf, "RGBA")
+        arr = np.frombuffer(data, dtype=np.uint8).reshape((h, w, 4))
+        a = arr[:, :, 3].astype(np.float64) / 255.0
+        mask = a >= 3.0 / 255.0
 
-            af = a / 255.0
-            # Unpremultiply
-            rf = r / (255.0 * af) if af > 0 else 0
-            gf = g / (255.0 * af) if af > 0 else 0
-            bf = b / (255.0 * af) if af > 0 else 0
+        af = np.where(mask, a, 1.0)
+        rf = np.where(mask, arr[:, :, 0].astype(np.float64) / (255.0 * af), 0.0)
+        gf = np.where(mask, arr[:, :, 1].astype(np.float64) / (255.0 * af), 0.0)
+        bf = np.where(mask, arr[:, :, 2].astype(np.float64) / (255.0 * af), 0.0)
 
-            hue, sat, bri = rgb_to_hsb(rf, gf, bf)
+        # RGB -> HSB (vectorized)
+        # Use np.errstate to suppress division warnings — np.where evaluates
+        # both branches, so division by zero occurs on masked pixels but results
+        # are discarded by the where mask.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            mx = np.maximum(np.maximum(rf, gf), bf)
+            mn = np.minimum(np.minimum(rf, gf), bf)
+            delta = mx - mn
+            hue = np.zeros_like(mx)
+            has_delta = delta > 0.001
+            r_max = has_delta & (mx == rf)
+            g_max = has_delta & (mx != rf) & (mx == gf)
+            b_max = has_delta & (mx != rf) & (mx != gf)
+            hue = np.where(r_max, ((gf - bf) / delta) % 6 / 6, hue)
+            hue = np.where(g_max, ((bf - rf) / delta + 2) / 6, hue)
+            hue = np.where(b_max, ((rf - gf) / delta + 4) / 6, hue)
+            hue = np.where(hue < 0, hue + 1.0, hue)
+            sat = np.where(mx > 0.001, delta / mx, 0.0)
+            bri = mx
 
-            nh = (hue + hs + 1) % 1.0
-            ns = max(0, min(1, sat * sm))
-            nb = max(0, min(1, bri + bo))
+        # Apply tint
+        nh = (hue + hs + 1) % 1.0
+        ns = np.clip(sat * sm, 0, 1)
+        nb = np.clip(bri + bo, 0, 1)
 
-            nr, ng, nbb = hsb_to_rgb(nh, ns, nb)
+        # HSB -> RGB (vectorized)
+        c = nb * ns
+        x_hsb = c * (1 - np.abs((nh * 6) % 2 - 1))
+        m = nb - c
+        sector = (nh * 6).astype(int) % 6
+        r1 = np.where(sector == 0, c, np.where(sector == 1, x_hsb, np.where(sector <= 3, 0.0, np.where(sector == 4, x_hsb, c))))
+        g1 = np.where(sector == 0, x_hsb, np.where(sector == 1, c, np.where(sector == 2, c, np.where(sector == 3, x_hsb, 0.0))))
+        b1 = np.where(sector <= 1, 0.0, np.where(sector == 2, x_hsb, np.where(sector == 3, c, np.where(sector == 4, c, x_hsb))))
+        nr, ng, nbb = r1 + m, g1 + m, b1 + m
 
-            # Premultiply and write back
-            pixels[x, y] = (
-                int(max(0, min(255, nr * af * 255))),
-                int(max(0, min(255, ng * af * 255))),
-                int(max(0, min(255, nbb * af * 255))),
-                a,
-            )
+        # Premultiply and write back
+        out = arr.copy()
+        out[:, :, 0] = np.clip(nr * af * 255, 0, 255).astype(np.uint8)
+        out[:, :, 1] = np.clip(ng * af * 255, 0, 255).astype(np.uint8)
+        out[:, :, 2] = np.clip(nbb * af * 255, 0, 255).astype(np.uint8)
 
-    data = img.tobytes()
-    return pygame.image.fromstring(data, (w, h), "RGBA")
+        return pygame.image.fromstring(out.tobytes(), (w, h), "RGBA")
+
+    except ImportError:
+        # Fallback: per-pixel Python loop (slow but no numpy dependency)
+        img_data = pygame.image.tostring(surf, "RGBA")
+        img = Image.frombytes("RGBA", (w, h), img_data)
+        pixels = img.load()
+
+        for y in range(h):
+            for x in range(w):
+                r, g, b, a = pixels[x, y]
+                if a < 3:
+                    continue
+                af = a / 255.0
+                rf = r / (255.0 * af) if af > 0 else 0
+                gf = g / (255.0 * af) if af > 0 else 0
+                bf = b / (255.0 * af) if af > 0 else 0
+                hue, sat, bri = rgb_to_hsb(rf, gf, bf)
+                nh = (hue + hs + 1) % 1.0
+                ns = max(0, min(1, sat * sm))
+                nb = max(0, min(1, bri + bo))
+                nr, ng, nbb = hsb_to_rgb(nh, ns, nb)
+                pixels[x, y] = (
+                    int(max(0, min(255, nr * af * 255))),
+                    int(max(0, min(255, ng * af * 255))),
+                    int(max(0, min(255, nbb * af * 255))),
+                    a,
+                )
+
+        data = img.tobytes()
+        return pygame.image.fromstring(data, (w, h), "RGBA")
 
 
 # ──────────────────────────────────────────────────────────
@@ -561,8 +617,8 @@ def _load_animation_frames(cat_color: str, state: str, direction: str, size: int
                 if (use_tint or (color_def and cat_color != "orange")):
                     surf = tint_surface_hsb(surf, color_def)
                 frames.append(surf)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to load sprite %s: %s", png_path, e)
 
     _sprite_cache[key] = frames
     return frames
@@ -592,8 +648,8 @@ def _load_rotation(cat_color: str, direction: str, size: int) -> Optional[pygame
                 surf = tint_surface_hsb(surf, color_def)
             _rotation_cache[key] = surf
             return surf
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to load rotation sprite %s: %s", path, e)
 
     _rotation_cache[key] = None
     return None
@@ -636,16 +692,16 @@ def load_memory() -> dict:
     if MEMORY_FILE.exists():
         try:
             return json.loads(MEMORY_FILE.read_text())
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to load memory: %s", e)
     return {}
 
 
 def save_memory(memory: dict):
     try:
         MEMORY_FILE.write_text(json.dumps(memory, ensure_ascii=False, indent=2))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to save memory: %s", e)
 
 
 def load_settings() -> dict:
@@ -660,28 +716,47 @@ def load_settings() -> dict:
         try:
             s = json.loads(SETTINGS_FILE.read_text())
             defaults.update(s)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("Failed to load settings: %s", e)
     return defaults
 
 
 def save_settings(settings: dict):
     try:
         SETTINGS_FILE.write_text(json.dumps(settings, ensure_ascii=False, indent=2))
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to save settings: %s", e)
 
 
 # ──────────────────────────────────────────────────────────
 # OLLAMA
 # ──────────────────────────────────────────────────────────
 
+_ollama_available = False
+_ollama_available_lock = threading.Lock()
+
+
 def ollama_available() -> bool:
-    try:
-        r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
-        return r.status_code == 200
-    except Exception:
-        return False
+    """Return last known Ollama status (non-blocking). Starts a background check if stale."""
+    global _ollama_available
+    return _ollama_available
+
+
+def ollama_available_check() -> None:
+    """Start a non-blocking Ollama availability check. Updates _ollama_available when done."""
+    global _ollama_available
+
+    def _check():
+        global _ollama_available
+        try:
+            r = requests.get(f"{OLLAMA_URL}/api/tags", timeout=2)
+            with _ollama_available_lock:
+                _ollama_available = r.status_code == 200
+        except Exception:
+            with _ollama_available_lock:
+                _ollama_available = False
+
+    threading.Thread(target=_check, daemon=True).start()
 
 
 def ollama_models() -> list:
@@ -690,6 +765,7 @@ def ollama_models() -> list:
         data = r.json()
         return [m["name"] for m in data.get("models", [])]
     except Exception:
+        logging.warning("Failed to fetch Ollama models")
         return []
 
 
@@ -701,7 +777,13 @@ def ollama_chat(
     on_done,
     on_error,
 ):
-    """Stream chat response from Ollama in a thread."""
+    """Stream chat response from Ollama in a thread.
+
+    Detects stalled connections: if no token is received within 30 seconds,
+    the connection is considered hung and on_error is called.
+    """
+    STREAM_TIMEOUT = 30  # seconds without a token before considering hung
+
     def run():
         try:
             payload = {
@@ -714,15 +796,22 @@ def ollama_chat(
                 f"{OLLAMA_URL}/api/chat",
                 json=payload,
                 stream=True,
-                timeout=60,
+                timeout=(10, 120),
             ) as resp:
                 full = ""
-                for line in resp.iter_lines():
+                last_token_time = time.time()
+                for line in resp.iter_lines(chunk_size=512):
                     if not line:
+                        # Check for stall between chunks
+                        if time.time() - last_token_time > STREAM_TIMEOUT:
+                            on_error("Ollama response timed out (no tokens received)")
+                            return
                         continue
                     try:
                         chunk = json.loads(line)
                         token = chunk.get("message", {}).get("content", "")
+                        if token:
+                            last_token_time = time.time()
                         full += token
                         on_token(token)
                         if chunk.get("done"):
@@ -925,6 +1014,7 @@ class ChatBubble:
         self.visible   = False
         self.input_text = ""
         self.messages  = []   # list of (role, text)
+        self._lock     = threading.Lock()
         self.streaming  = ""
         self.is_loading = False
         self.cursor_blink = 0.0
@@ -977,12 +1067,14 @@ class ChatBubble:
         ollama_msgs.append({"role": "user", "content": user_msg})
 
         def on_token(tok):
-            self.streaming += tok
+            with self._lock:
+                self.streaming += tok
 
         def on_done(full):
-            self.is_loading = False
-            self.messages.append(("assistant", full or self.streaming))
-            self.streaming = ""
+            with self._lock:
+                self.is_loading = False
+                self.messages.append(("assistant", full or self.streaming))
+                self.streaming = ""
             # Persist to memory
             history.append(("user", user_msg))
             history.append(("assistant", full or "..."))
@@ -990,10 +1082,10 @@ class ChatBubble:
             save_memory(memory)
 
         def on_error(err):
-            self.is_loading = False
-            lang = settings.get("lang", "en")
-            self.messages.append(("assistant", f"[Ollama error: {err}]"))
-            self.streaming = ""
+            with self._lock:
+                self.is_loading = False
+                self.messages.append(("assistant", f"[Ollama error: {err}]"))
+                self.streaming = ""
 
         if not ollama_available():
             self.is_loading = False
@@ -1073,9 +1165,12 @@ class ChatBubble:
         surface.set_clip(msg_area)
 
         all_msgs = list(self.messages)
-        if self.streaming:
-            all_msgs.append(("assistant", self.streaming + "|"))
-        elif self.is_loading and not self.streaming:
+        with self._lock:
+            streaming_snapshot = self.streaming
+            loading_snapshot = self.is_loading
+        if streaming_snapshot:
+            all_msgs.append(("assistant", streaming_snapshot + "|"))
+        elif loading_snapshot and not streaming_snapshot:
             dots = "." * (int(time.time() * 2) % 4)
             all_msgs.append(("assistant", dots or "."))
 
@@ -1103,7 +1198,13 @@ class ChatBubble:
 
         self.cursor_blink = time.time() % 2
         cursor = "|" if self.cursor_blink < 1 else " "
-        display = self.input_text[-40:] + cursor
+        # Show as much of the input as fits, scrolling from the right
+        available_w = input_rect.w - 8  # padding
+        max_chars = max(1, available_w // (6 * FS))
+        if len(self.input_text) > max_chars:
+            display = self.input_text[-(max_chars - 1):] + cursor
+        else:
+            display = self.input_text + cursor
         render_pixel_text(surface, display,
                           input_rect.x + 4, input_rect.y + (CHAT_INPUT_H - 4)//2 - 3,
                           (0x4C, 0x33, 0x1A), FS)
@@ -1149,6 +1250,8 @@ class Cat:
     drag_offset: tuple = (0, 0)
     chat: Optional[object] = None   # ChatBubble
     walk_dir: int = 1    # 1=right, -1=left for horizontal movement
+    dest_x: Optional[float] = None  # walking destination x (None = walk forever)
+    dest_y: Optional[float] = None  # walking destination y (for 8-dir)
     # Click vs drag detection (match macOS)
     mouse_down_pos: Optional[tuple] = None
     mouse_down_time: float = 0.0
@@ -1186,25 +1289,54 @@ class Cat:
                 # Safety timeout: force transition to idle
                 self.state = "idle"
                 self.frame = 0
-            self._pick_next_state(lang)
+            self._pick_next_state(lang, screen_w, screen_h)
 
         # Movement
         if self.state == "walking":
-            self.x += self.walk_dir * WALK_SPEED
-            # Update direction based on movement
-            if self.walk_dir > 0:
+            dx = self.walk_dir * WALK_SPEED
+            dy = 0.0
+
+            # Walk toward destination if set
+            if self.dest_x is not None:
+                diff_x = self.dest_x - self.x
+                diff_y = (self.dest_y or self.y) - self.y
+                dist = math.sqrt(diff_x * diff_x + diff_y * diff_y)
+                if dist < WALK_SPEED * 2:
+                    # Arrived at destination — stop walking
+                    self.state = "idle"
+                    self.state_timer = random.uniform(2.0, 5.0)
+                    self.dest_x = None
+                    self.dest_y = None
+                else:
+                    # Move toward destination with 8-directional movement
+                    dx = (diff_x / dist) * WALK_SPEED
+                    dy = (diff_y / dist) * WALK_SPEED
+                    self.walk_dir = 1 if dx >= 0 else -1
+            else:
+                # Horizontal-only walk with bounce (original behavior)
+                if self.x <= 0:
+                    self.x = 0
+                    self.walk_dir = 1
+                elif self.x >= screen_w - self.size:
+                    self.x = screen_w - self.size
+                    self.walk_dir = -1
+
+            self.x += dx
+            self.y += dy
+
+            # Determine 8-direction sprite from movement
+            dir_dx = 1 if dx > 0.1 else (-1 if dx < -0.1 else 0)
+            dir_dy = 1 if dy > 0.1 else (-1 if dy < -0.1 else 0)
+            if (dir_dx, dir_dy) in DIR_MAP_8:
+                self.direction = DIR_MAP_8[(dir_dx, dir_dy)]
+            elif self.walk_dir > 0:
                 self.direction = "east"
             else:
                 self.direction = "west"
 
-            if self.x <= 0:
-                self.x = 0
-                self.walk_dir = 1
-            elif self.x >= screen_w - self.size:
-                self.x = screen_w - self.size
-                self.walk_dir = -1
-
-        # Frame animation
+            # Clamp to screen bounds
+            self.x = max(0, min(screen_w - self.size, self.x))
+            self.y = max(0, min(screen_h - self.size, self.y))
         self.frame_timer += dt
         if self.frame_timer >= 1.0 / FPS:
             self.frame_timer = 0
@@ -1227,13 +1359,20 @@ class Cat:
             return _count_frames(self.color_key, self.state, self.direction)
         return 12  # fallback
 
-    def _pick_next_state(self, lang: str = "en"):
+    def _pick_next_state(self, lang: str = "en", screen_w: int = 0, screen_h: int = 0):
         roll = random.random()
         if roll < 0.35:
             self.state = "walking"
             self.state_timer = random.uniform(2.0, 5.0)
             if random.random() < 0.5:
                 self.walk_dir *= -1
+            # Set a random destination for 8-directional walking
+            if screen_w > 0 and screen_h > 0:
+                self.dest_x = random.uniform(self.size, screen_w - self.size * 2)
+                self.dest_y = random.uniform(screen_h * 0.3, screen_h - self.size)
+            else:
+                self.dest_x = None
+                self.dest_y = None
         elif roll < 0.55:
             self.state = "idle"
             self.state_timer = random.uniform(1.5, 4.0)
@@ -1488,7 +1627,7 @@ class SettingsPanel:
         if model_rect.collidepoint(pos):
             if self._available_models:
                 self._sync_model_index(settings)
-                self._model_index = (self._model_index + 1) % len(self._available_models)
+                self._model_index = self._model_index % len(self._available_models)
                 settings["model"] = self._available_models[self._model_index]
                 save_settings(settings)
             else:
@@ -1523,7 +1662,7 @@ class SettingsPanel:
             save_settings(settings)
             _clear_sprite_caches()
             for cat in cats:
-                cat.size = CAT_BASE_SIZE * settings["scale"]
+                cat.size = int(CAT_BASE_SIZE * settings["scale"])
 
     def handle_mouse_up(self):
         """End slider dragging."""
@@ -1620,8 +1759,8 @@ class SettingsPanel:
                 px = self.rect.x + (self.W - preview_size) // 2
                 py = self.rect.y + 94
                 surface.blit(preview_surf, (px, py))
-            except Exception:
-                pass
+            except Exception as e:
+                logger.warning("Failed to load preview sprite for %s: %s", sel, e)
 
             # Name
             render_pixel_text(surface, l10n("name", lang),
@@ -1708,7 +1847,7 @@ class SettingsPanel:
 # ──────────────────────────────────────────────────────────
 
 def _make_cat(color_key: str, screen_w: int, screen_h: int, scale: int) -> Cat:
-    size = CAT_BASE_SIZE * scale
+    size = int(CAT_BASE_SIZE * scale)
     x    = random.randint(size, max(size+1, screen_w - size*2))
     y    = screen_h - size  # walk on the floor (panel/taskbar)
     cat  = Cat(color_key=color_key, x=x, y=y, size=size)
@@ -1911,8 +2050,8 @@ def _x11_available() -> bool:
         if result.returncode == 0:
             _X11_open = True
             return True
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("X11 detection failed: %s", e)
     return False
 
 
@@ -1969,7 +2108,8 @@ class _X11Conn:
             ctypes.c_void_p,  # data
             ctypes.c_int,     # nelements
         ]
-        arr = (ctypes.c_ulong * len(data))(*data)
+        # X11 format=32 means 32-bit values; use c_uint (4 bytes) not c_ulong (8 on 64-bit)
+        arr = (ctypes.c_uint * len(data))(*data)
         self.lib.XChangeProperty(
             self.dpy, window, prop, prop_type, 32, 0,
             arr, len(data)
@@ -2009,8 +2149,8 @@ def get_panel_height_x11() -> int:
                 # xdotool gives full screen size, not workarea.
                 # Try xprop for workarea.
                 pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("xdotool display geometry check failed: %s", e)
 
     # Try xprop for _NET_WORKAREA
     try:
@@ -2040,8 +2180,8 @@ def get_panel_height_x11() -> int:
                             sp = r2.stdout.strip().split()
                             if len(sp) >= 2:
                                 screen_h = int(sp[1])
-                    except Exception:
-                        pass
+                    except Exception as e:
+                        logger.warning("xdotool screen size check failed: %s", e)
                     if screen_h == 0:
                         # Fallback: use Xrandr
                         try:
@@ -2057,13 +2197,13 @@ def get_panel_height_x11() -> int:
                                         if m2:
                                             screen_h = int(m2.group(2))
                                             break
-                        except Exception:
-                            pass
+                        except Exception as e:
+                            logger.warning("xrandr screen size check failed: %s", e)
                     if screen_h > 0:
                         panel_h = screen_h - (wa_y + wa_h)
                         return max(0, panel_h)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("xprop panel height detection failed: %s", e)
 
     # Fallback: try python-xlib if installed
     try:
@@ -2085,8 +2225,8 @@ def get_panel_height_x11() -> int:
                 dpy.close()
                 return max(0, screen_h - (wa_y + wa_h))
         dpy.close()
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("python-xlib panel height detection failed: %s", e)
 
     return 0
 
@@ -2119,8 +2259,8 @@ def get_active_window_geometry_x11() -> Optional[Tuple[int, int, int, int]]:
         if 'X' in geom and 'Y' in geom and 'WIDTH' in geom and 'HEIGHT' in geom:
             if geom['WIDTH'] >= 100 and geom['HEIGHT'] >= 100:
                 return (geom['X'], geom['Y'], geom['WIDTH'], geom['HEIGHT'])
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("xdotool window geometry detection failed: %s", e)
 
     # Fallback: try python-xlib
     try:
@@ -2163,8 +2303,8 @@ def _find_pygame_window_x11() -> Optional[int]:
                 wid = line.strip()
                 if wid.isdigit():
                     return int(wid)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to find Pygame window via xdotool: %s", e)
     return None
 
 
@@ -2396,7 +2536,7 @@ def _draw_context_menu(surface, menu: dict, lang: str):
 
 def _handle_context_menu_click(pos, menu: dict, settings: dict,
                                 cats: list, sw: int, sh: int,
-                                settings_panel) -> bool:
+                                settings_panel, memory: dict) -> bool:
     """Handle a click on the context menu. Returns True if consumed."""
     x, y = menu["pos"]
     items = menu["items"]
@@ -2432,7 +2572,7 @@ def _handle_context_menu_click(pos, menu: dict, settings: dict,
         settings_panel.toggle()
     elif action == "quit":
         save_settings(settings)
-        save_memory(load_memory())  # ensure memory is saved
+        save_memory(memory)
         pygame.quit()
         sys.exit()
 
@@ -2482,23 +2622,38 @@ def main():
 
     print(f"[CATAI] Display: {display_server}, Transparent: {use_transparent}, XShape: {use_xshape}, Panel: {panel_height}px")
 
-    pygame.init()
+    try:
+        pygame.init()
+    except Exception as e:
+        print(f"[CATAI] Failed to initialize pygame: {e}")
+        sys.exit(1)
+
     info   = pygame.display.Info()
     sw, sh = info.current_w, info.current_h
 
     # Create window — always fullscreen borderless for desktop mode
     flags  = pygame.NOFRAME
-    if args.fullscreen or use_transparent:
-        screen = pygame.display.set_mode((sw, sh), flags)
-    else:
-        sw = min(sw, 1280)
-        sh = min(sh, 800)
-        screen = pygame.display.set_mode((sw, sh), flags)
+    try:
+        if args.fullscreen or use_transparent:
+            screen = pygame.display.set_mode((sw, sh), flags)
+        else:
+            sw = min(sw, 1280)
+            sh = min(sh, 800)
+            screen = pygame.display.set_mode((sw, sh), flags)
+    except pygame.error as e:
+        print(f"[CATAI] Failed to create display ({e}). Trying fallback 800x600 window...")
+        try:
+            sw, sh = 800, 600
+            screen = pygame.display.set_mode((sw, sh))
+        except pygame.error as e2:
+            print(f"[CATAI] Could not create any display: {e2}")
+            sys.exit(1)
 
     scanline_overlay = None
     x11_win_id = None  # X11 window ID for X Shape transparency
     offscreen = None    # Off-screen SRCALPHA surface for X Shape rendering
     xshape_dpy = None   # Cached X11 Display connection for shape updates
+    xshape_last_positions = None  # Last cat positions for X Shape caching
 
     pygame.display.set_caption("CATAI Linux")
 
@@ -2506,8 +2661,8 @@ def main():
         pygame.display.set_icon(
             make_cat_surface((255,140,0), "idle", 0, 32)
         )
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning("Failed to set window icon: %s", e)
 
     # Set up X11 window properties for desktop overlay
     if use_transparent and display_server == "x11":
@@ -2515,8 +2670,8 @@ def main():
             ok, x11_win_id = setup_x11_transparent_window()
             if not ok:
                 x11_win_id = None
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning("X11 transparent window setup failed: %s", e)
 
     # Initialize sound system
     sound_enabled = args.sound if args.sound is not None else not args.no_sound
@@ -2573,10 +2728,11 @@ def main():
         dt = clock.tick(60) / 1000.0
         lang = settings.get("lang", "en")
 
-        # Periodic Ollama check (main thread, simple and safe)
+        # Periodic Ollama check (non-blocking background thread)
         ollama_check_t -= dt
         if ollama_check_t <= 0:
             ollama_check_t = 5.0
+            ollama_available_check()
             ollama_ok = ollama_available()
 
         # Refresh model list periodically
@@ -2630,7 +2786,7 @@ def main():
                 # Check context menu first
                 if context_menu is not None:
                     menu_consumed = _handle_context_menu_click(
-                        pos, context_menu, settings, cats, sw, sh, settings_panel)
+                        pos, context_menu, settings, cats, sw, sh, settings_panel, memory)
                     context_menu = None
                     if menu_consumed:
                         continue
@@ -2771,9 +2927,12 @@ def main():
         if context_menu is not None:
             _draw_context_menu(target, context_menu, lang)
 
-        # Apply X Shape mask and blit to display
+        # Apply X Shape mask and blit to display (only when positions change)
         if use_xshape and x11_win_id is not None:
-            _, xshape_dpy = apply_window_shape(target, x11_win_id, xshape_dpy)
+            current_positions = tuple((int(c.x), int(c.y), c.state) for c in cats)
+            if current_positions != xshape_last_positions:
+                _, xshape_dpy = apply_window_shape(target, x11_win_id, xshape_dpy)
+                xshape_last_positions = current_positions
             screen.fill((0, 0, 0))
             screen.blit(target, (0, 0))
 
