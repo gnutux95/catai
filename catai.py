@@ -1,4 +1,7 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: GPL-3.0-or-later
+# SPDX-FileCopyrightText: 2025 CATAI Linux contributors
+# SPDX-FileCopyrightText: 2025 wil-pe (MIT-licensed original CATAI sprites and HSB tinting logic)
 """
 CATAI Linux — Port of wil-pe/CATAI for Linux
 Pixel art desktop cats with Ollama LLM chat

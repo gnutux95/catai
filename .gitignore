@@ -1,0 +1,28 @@
+# External/original project code
+ori/
+
+# Generated/downloaded sprites (from --download or _ensure_rotations)
+sprites/
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Claude Code config
+CLAUDE.md
+
+# User config (created at runtime)
+~/.catai_settings.json
+~/.catai_memory.json
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+*.swp
+*.swo
+*~
+.vscode/
+.idea/

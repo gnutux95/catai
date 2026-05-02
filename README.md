@@ -2,7 +2,34 @@
 
 Port Linux de [wil-pe/CATAI](https://github.com/wil-pe/CATAI) — chats pixel art sur le bureau, connectes a Ollama.
 
-## Installation rapide (Fedora 43)
+## Quickstart
+
+```bash
+# 1. Installer les dependances
+bash install.sh
+
+# 2. (Optionnel) Installer Ollama pour le chat IA
+curl -fsSL https://ollama.ai/install.sh | sh
+ollama serve &
+ollama pull qwen2.5:3b
+
+# 3. (Optionnel) Telecharger les sprites haute qualite
+python3 catai.py --download
+
+# 4. Lancer !
+python3 catai.py
+```
+
+Sans Ollama les chats se baladent mais restent muets. Sans `--download` des sprites generes proceduralement sont utilises.
+
+| Action | Controle |
+|--------|----------|
+| Discuter avec un chat | Clic gauche |
+| Deplacer un chat | Clic droit + glisser |
+| Parametres | Ctrl+S |
+| Quitter | Ctrl+Q |
+
+## Installation manuelle (Fedora 43)
 
 ```bash
 # Dependances systeme
@@ -119,6 +146,18 @@ Les chats non-orange utilisent un systeme de teinte HSB pour coloriser les sprit
 | Edition nom du chat |  |  |
 | Telechargement sprites | manuel | --download |
 
+## Credits
+
+Ce projet est un port Linux de [CATAI](https://github.com/wil-pe/CATAI) par **wil-pe**.
+
+Code et assets reutilises du projet original (MIT) :
+- **Sprites pixel art** — 368 sprites du chat orange (`cute_orange_cat/`) dessines par wil-pe, utilises via `--download` ou copies depuis `ori/CATAI/`
+- **Logique de teinte HSB** — L'algorithme de colorisation `tintSprite()` du fichier `cat.swift` de wil-pe/CATAI a ete reecrit en Python pour produire les variantes black, white, grey, brown, cream a partir des sprites orange
+- **Personnalites et noms des chats** — Citrouille, Ombre, Neige, Einstein, Indiana, Caramel et leurs prompts Ollama sont adaptes du projet original
+- **Structure d'animation** — Etats (idle, walking, sleeping, eating, drinking, angry, waking) et 8 directions reprends le systeme d'animation de CATAI macOS
+
 ## Licence
 
-MIT — sprites originaux  wil-pe (MIT)
+Ce projet est distribue sous **GNU General Public License v3** (GPLv3).
+
+Les elements derives du projet original [wil-pe/CATAI](https://github.com/wil-pe/CATAI) restent sous leur licence **MIT** d'origine. Le fichier `LICENSE` contient le texte integral des deux licences.
